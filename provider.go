@@ -98,7 +98,10 @@ func (p *Provider) AddCommands() []app.Command {
 // AddPublishables offers the cache config file to `lemmego publish`.
 func (p *Provider) AddPublishables() []*app.Publishable {
 	return []*app.Publishable{
-		{FilePath: "internal/configs/cache.go", Content: []byte(ConfigStub), Tag: "config"},
+		// The tag is namespaced because --tags is a real selector: a bare
+		// "config" collides with every other package that publishes one, so
+		// asking for this module's meant getting all of them.
+		{FilePath: "internal/configs/cache.go", Content: []byte(ConfigStub), Tag: TagConfig},
 	}
 }
 
@@ -264,3 +267,7 @@ func (c *Config) applySharedRedis(shared config.M) {
 		c.Redis.Password = password
 	}
 }
+
+// TagConfig is what `lemmego publish --tags` selects this module's
+// configuration on.
+const TagConfig = "cache-config"

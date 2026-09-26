@@ -121,7 +121,10 @@ func TestProviderPublishesItsConfigFile(t *testing.T) {
 	if publishables[0].FilePath != "internal/configs/cache.go" {
 		t.Errorf("FilePath = %q", publishables[0].FilePath)
 	}
-	if publishables[0].Tag != "config" {
+	// Namespaced: --tags is a real selector, so a bare "config" would mean
+	// asking for this module's configuration published every other module's
+	// as well.
+	if publishables[0].Tag != cache.TagConfig {
 		t.Errorf("Tag = %q, want config", publishables[0].Tag)
 	}
 }
