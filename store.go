@@ -46,6 +46,10 @@ var (
 // that talk over a network can honour cancellation; drivers that cannot are
 // free to ignore it, and say so in their documentation.
 //
+// Keys passed in are logical: the store applies its own Prefix. A caller must
+// not prepend it, and two stores with different prefixes over the same backing
+// must not see each other's entries.
+//
 // A Store must be safe for concurrent use.
 type Store interface {
 	// Get returns the raw value for key, or ErrMiss if it is absent or expired.

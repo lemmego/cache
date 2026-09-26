@@ -51,8 +51,10 @@ func newTaggedStore(inner Store, codec Codec, tags []string) *taggedStore {
 	return &taggedStore{inner: inner, codec: codec, tags: normalized}
 }
 
+// versionKey is a logical key: the underlying store applies its own prefix, so
+// prepending one here would namespace it twice.
 func (s *taggedStore) versionKey(tag string) string {
-	return s.inner.Prefix() + "tag:" + tag + ":v"
+	return "tag:" + tag + ":v"
 }
 
 // namespace returns the prefix keys are currently written under, minting a

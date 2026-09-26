@@ -49,6 +49,7 @@ var entryFileName = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // Store is a filesystem-backed cache.
 type Store struct {
 	dir    string
+	root   string // dir plus a directory of this store's own, see New
 	prefix string
 	now    func() time.Time
 	locks  [lockStripes]sync.Mutex
@@ -79,10 +80,17 @@ func New(cfg Config) (*Store, error) {
 	if cfg.Dir == "" {
 		return nil, errors.New("cache/file: Dir is required")
 	}
-	if err := os.MkdirAll(cfg.Dir, 0o700); err != nil {
-		return nil, fmt.Errorf("cache/file: creating %s: %w", cfg.Dir, err)
+	// Each prefix gets its own subtree. Entry filenames are hashes, so a flush
+	// could not otherwise tell one store's files from another's sharing the
+	// directory — it would either have to read every file to find out, or
+	// delete them all.
+	sum := sha256.Sum256([]byte(cfg.Prefix))
+	root := filepath.Join(cfg.Dir, "p-"+hex.EncodeToString(sum[:6]))
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, fmt.Errorf("cache/file: creating %s: %w", root, err)
 	}
-	s := &Store{dir: cfg.Dir, prefix: cfg.Prefix, now: cfg.Now}
+
+	s := &Store{dir: cfg.Dir, root: root, prefix: cfg.Prefix, now: cfg.Now}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -93,15 +101,18 @@ func (s *Store) Prefix() string { return s.prefix }
 
 // path shards entries two levels deep. One directory holding every entry makes
 // both the filesystem and any listing of it slow once a cache gets large.
+//
+// They live under this store's own root, so a flush can find exactly its own
+// entries.
 func (s *Store) path(key string) string {
-	sum := sha256.Sum256([]byte(key))
+	sum := sha256.Sum256([]byte(s.prefix + key))
 	name := hex.EncodeToString(sum[:])
-	return filepath.Join(s.dir, name[0:2], name[2:4], name)
+	return filepath.Join(s.root, name[0:2], name[2:4], name)
 }
 
 func (s *Store) lockFor(key string) *sync.Mutex {
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
+	_, _ = h.Write([]byte(s.prefix + key))
 	return &s.locks[h.Sum32()%lockStripes]
 }
 
@@ -352,7 +363,7 @@ func (s *Store) Prune(context.Context) error {
 
 // walkEntries visits only the files this store owns.
 func (s *Store) walkEntries(fn func(path string, info os.FileInfo) error) error {
-	return filepath.Walk(s.dir, func(path string, info os.FileInfo, err error) error {
+	return filepath.Walk(s.root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return nil

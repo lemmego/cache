@@ -15,7 +15,8 @@ import (
 // is not on NFS. For a lock that has to hold across machines, use the redis
 // store.
 func (s *Store) NewLock(name, owner string, ttl time.Duration) cache.Lock {
-	return &lock{store: s, key: s.prefix + "lock:" + name, owner: owner, ttl: ttl}
+	// A logical key: the store applies its prefix when hashing the path.
+	return &lock{store: s, key: "lock:" + name, owner: owner, ttl: ttl}
 }
 
 type lock struct {

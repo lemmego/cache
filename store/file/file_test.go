@@ -56,6 +56,19 @@ func TestConformance(t *testing.T) {
 		// Tag membership would need an index the filesystem does not give
 		// cheaply; tagged caches fall back to version bumping.
 		TagIndex: false,
+
+		SharedBacking: func(t *testing.T) (cache.Store, cache.Store) {
+			dir := t.TempDir()
+			first, err := file.New(file.Config{Dir: dir, Prefix: "alpha:"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := file.New(file.Config{Dir: dir, Prefix: "beta:"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return first, second
+		},
 	}, newStore)
 }
 

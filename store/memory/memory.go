@@ -123,6 +123,11 @@ func (s *Store) Prune(context.Context) error {
 	return nil
 }
 
+// namespaced applies this store's prefix. Callers pass logical keys; the store
+// owns the namespace, which is what keeps two stores with different prefixes
+// over the same map from colliding.
+func (s *Store) namespaced(key string) string { return s.prefix + key }
+
 func (s *Store) shardFor(key string) *shard {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(key))
@@ -139,6 +144,7 @@ func (s *Store) expiryFor(ttl time.Duration) time.Time {
 }
 
 func (s *Store) Get(_ context.Context, key string) ([]byte, error) {
+	key = s.namespaced(key)
 	sh := s.shardFor(key)
 
 	sh.mu.RLock()
@@ -178,6 +184,7 @@ func (s *Store) GetMany(ctx context.Context, keys []string) (map[string][]byte, 
 }
 
 func (s *Store) Put(_ context.Context, key string, value []byte, ttl time.Duration) error {
+	key = s.namespaced(key)
 	sh := s.shardFor(key)
 	sh.mu.Lock()
 	sh.entries[key] = entry{value: append([]byte(nil), value...), expiresAt: s.expiryFor(ttl)}
@@ -195,6 +202,7 @@ func (s *Store) PutMany(ctx context.Context, values map[string][]byte, ttl time.
 }
 
 func (s *Store) Add(_ context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	key = s.namespaced(key)
 	sh := s.shardFor(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
@@ -207,6 +215,7 @@ func (s *Store) Add(_ context.Context, key string, value []byte, ttl time.Durati
 }
 
 func (s *Store) Increment(_ context.Context, key string, delta int64) (int64, error) {
+	key = s.namespaced(key)
 	sh := s.shardFor(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
@@ -235,6 +244,7 @@ func (s *Store) Decrement(ctx context.Context, key string, delta int64) (int64, 
 }
 
 func (s *Store) Forget(_ context.Context, key string) (bool, error) {
+	key = s.namespaced(key)
 	sh := s.shardFor(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
@@ -247,6 +257,10 @@ func (s *Store) Forget(_ context.Context, key string) (bool, error) {
 	delete(sh.entries, key)
 	return true, nil
 }
+
+// getRaw and friends operate on already-namespaced keys, for the lock, which
+// builds its own.
+func (s *Store) rawShard(key string) *shard { return s.shardFor(key) }
 
 func (s *Store) Flush(context.Context) error {
 	for _, sh := range s.shards {

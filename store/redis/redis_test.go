@@ -55,6 +55,22 @@ func TestConformance(t *testing.T) {
 		ForeignKeySafe:  true,
 		HonoursContext:  true,
 		Persists:        true,
+
+		SharedBacking: func(t *testing.T) (cache.Store, cache.Store) {
+			server := miniredis.RunT(t)
+			client := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
+			t.Cleanup(func() { _ = client.Close() })
+
+			first, err := rediscache.New(rediscache.Config{Client: client, Prefix: "alpha:"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := rediscache.New(rediscache.Config{Client: client, Prefix: "beta:"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return first, second
+		},
 	}, newStore)
 }
 

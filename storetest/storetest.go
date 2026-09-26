@@ -34,6 +34,11 @@ type Clock interface {
 // Factory builds a store to test, and the clock that drives it.
 type Factory func(t *testing.T) (cache.Store, Clock)
 
+// SharedBackingFactory builds two stores with different prefixes over the same
+// backing — one Redis database, one cache directory. It is optional; a store
+// that cannot share a backing leaves it nil.
+type SharedBackingFactory func(t *testing.T) (first, second cache.Store)
+
 // Capabilities declares what the store under test can do, so the suite skips
 // the cases that do not apply rather than failing them.
 type Capabilities struct {
@@ -50,6 +55,11 @@ type Capabilities struct {
 	// Persists: values written survive; false for the null store, which
 	// turns the suite into a check that nothing panics.
 	Persists bool
+
+	// SharedBacking builds two stores with different prefixes over one
+	// backing, to check they stay separate. Leave nil if the store cannot
+	// share one.
+	SharedBacking SharedBackingFactory
 }
 
 // Run executes the conformance suite.
@@ -88,6 +98,53 @@ func Run(t *testing.T, caps Capabilities, newStore Factory) {
 	}
 	if caps.HonoursContext {
 		t.Run("ContextCancellation", func(t *testing.T) { testContextCancellation(t, newStore) })
+	}
+	if caps.SharedBacking != nil {
+		t.Run("PrefixIsolation", func(t *testing.T) { testPrefixIsolation(t, caps.SharedBacking) })
+	}
+}
+
+// A store owns its prefix: two stores over the same backing with different
+// prefixes must not see each other's entries, and flushing one must not empty
+// the other.
+//
+// This is also what keeps a caller from having to prepend the prefix itself —
+// doing so on a store that already applies it namespaces the key twice.
+func testPrefixIsolation(t *testing.T, newPair SharedBackingFactory) {
+	first, second := newPair(t)
+	ctx := context.Background()
+
+	if first.Prefix() == second.Prefix() {
+		t.Fatal("the factory returned two stores with the same prefix")
+	}
+
+	if err := first.Put(ctx, "shared-key", []byte("first"), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Put(ctx, "shared-key", []byte("second"), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := first.Get(ctx, "shared-key")
+	if err != nil {
+		t.Fatalf("first.Get() error = %v", err)
+	}
+	if string(got) != "first" {
+		t.Errorf("first store read %q; the two prefixes share a key", got)
+	}
+	if got, err = second.Get(ctx, "shared-key"); err != nil || string(got) != "second" {
+		t.Errorf("second.Get() = %q, %v; want \"second\"", got, err)
+	}
+
+	// Flushing one must leave the other intact.
+	if err := first.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Get(ctx, "shared-key"); !errors.Is(err, cache.ErrMiss) {
+		t.Error("Flush() left the flushed store's own entry")
+	}
+	if got, err = second.Get(ctx, "shared-key"); err != nil || string(got) != "second" {
+		t.Errorf("flushing one prefix removed another's entry: %q, %v", got, err)
 	}
 }
 
