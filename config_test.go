@@ -108,3 +108,66 @@ func TestUnknownCodecIsRejected(t *testing.T) {
 		t.Fatal("resolveConfig() accepted an unknown codec")
 	}
 }
+
+// An application usually has one Redis, configured once. Before this, the
+// cache had its own address that defaulted to 127.0.0.1:6379 while the session
+// read keyvalue.connections.redis and the queue read tasker.redis_addr — three
+// independent settings for one server, and pointing them all at a real Redis
+// meant saying so three times.
+func TestSharedRedisConnectionIsUsedWhenTheCacheDoesNotSayOtherwise(t *testing.T) {
+	shared := config.M{"host": "10.0.0.7", "port": 6380, "password": "hunter2"}
+
+	cfg, err := resolveConfig(nil, config.M{"driver": "redis"}, shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Redis.Addr != "10.0.0.7:6380" {
+		t.Errorf("addr = %q, want the shared connection", cfg.Redis.Addr)
+	}
+	if cfg.Redis.Password != "hunter2" {
+		t.Errorf("password = %q, want the shared one", cfg.Redis.Password)
+	}
+}
+
+// A cache that names its own Redis still wins, so an application can point its
+// cache at a different server or database.
+func TestTheCacheOverridesTheSharedRedisConnection(t *testing.T) {
+	shared := config.M{"host": "10.0.0.7", "port": 6380}
+	own := config.M{
+		"driver": "redis",
+		"stores": config.M{"redis": config.M{"addr": "cache-only:6390", "db": 3}},
+	}
+
+	cfg, err := resolveConfig(nil, own, shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Redis.Addr != "cache-only:6390" {
+		t.Errorf("addr = %q, want the cache's own", cfg.Redis.Addr)
+	}
+	if cfg.Redis.DB != 3 {
+		t.Errorf("db = %d, want 3", cfg.Redis.DB)
+	}
+}
+
+// No shared block is the common case and must change nothing.
+func TestAbsentSharedRedisLeavesTheDefault(t *testing.T) {
+	cfg, err := resolveConfig(nil, config.M{"driver": "redis"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Redis.Addr != DefaultConfig().Redis.Addr {
+		t.Errorf("addr = %q, want the default", cfg.Redis.Addr)
+	}
+}
+
+// A shared block with no host is not a configuration at all.
+func TestSharedRedisWithoutAHostIsIgnored(t *testing.T) {
+	cfg, err := resolveConfig(nil, config.M{"driver": "redis"}, config.M{"password": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Redis.Addr != DefaultConfig().Redis.Addr {
+		t.Errorf("addr = %q, want the default", cfg.Redis.Addr)
+	}
+}

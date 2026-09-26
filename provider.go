@@ -3,6 +3,8 @@ package cache
 import (
 	"context"
 	"log/slog"
+	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -45,7 +47,13 @@ var _ app.Provider = (*Provider)(nil)
 func (p *Provider) Provide(a app.App) error {
 	appConfig, _ := a.Config().Get("cache").(config.M)
 
-	cfg, err := resolveConfig(p.Config, appConfig)
+	// An application usually has one Redis. Reading the shared connection
+	// block means a project that configured Redis once does not have to
+	// repeat the address here, while cache.stores.redis still wins when it
+	// says something.
+	sharedRedis, _ := a.Config().Get("keyvalue.connections.redis").(config.M)
+
+	cfg, err := resolveConfig(p.Config, appConfig, sharedRedis)
 	if err != nil {
 		return err
 	}
@@ -130,8 +138,15 @@ func FromApp(a app.App) *Cache { return app.Get[*Cache](a) }
 
 // resolveConfig layers the defaults, the application's config, and the
 // provider's own fields, in that order of increasing priority.
-func resolveConfig(explicit *Config, appConfig config.M) (*Config, error) {
+func resolveConfig(explicit *Config, appConfig config.M, sharedRedis ...config.M) (*Config, error) {
 	cfg := DefaultConfig()
+
+	// Order matters: the shared connection is a weaker source than anything
+	// written under cache, which is weaker than what the provider was given
+	// directly.
+	for _, shared := range sharedRedis {
+		cfg.applySharedRedis(shared)
+	}
 	cfg.applyOverrides(appConfig)
 	cfg.applyExplicit(explicit)
 
@@ -224,5 +239,28 @@ func (c *Config) applyExplicit(explicit *Config) {
 	}
 	if explicit.Redis.AllowFlushDB {
 		c.Redis.AllowFlushDB = true
+	}
+}
+
+// applySharedRedis takes the address and password from the application's shared
+// Redis connection, so one configured Redis serves the cache too.
+//
+// It is applied before the cache's own settings, so cache.stores.redis still
+// overrides it. The shared block spells the address as separate host and port,
+// which is the shape the session provider already reads.
+func (c *Config) applySharedRedis(shared config.M) {
+	if shared == nil {
+		return
+	}
+
+	host := shared.String("host")
+	if host == "" {
+		return
+	}
+	port := shared.Int("port", 6379)
+	c.Redis.Addr = net.JoinHostPort(host, strconv.Itoa(port))
+
+	if password := shared.String("password"); password != "" {
+		c.Redis.Password = password
 	}
 }
