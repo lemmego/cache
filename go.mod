@@ -5,7 +5,7 @@ go 1.27
 require (
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/lemmego/api v0.1.33
+	github.com/lemmego/api v0.1.34
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/sync v0.19.0
 )
