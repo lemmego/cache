@@ -21,11 +21,10 @@ users, err := cache.Remember(ctx, "users:active", 5*time.Minute,
 has to know how a value is encoded. `Cache` sits above it and owns encoding,
 events and the generic API.
 
-`Cache` is a concrete type, and there is deliberately **no interface over it**.
-Several of its methods declare their own type parameters, which Go permits only
-on concrete types — a method with type parameters can never satisfy an
-interface. Adding a `Cacher` interface later would silently delete the typed
-API.
+`Cache` is a concrete type and there is **no interface over it**. Several of
+its methods declare their own type parameters, which Go permits only on
+concrete types — a method with type parameters can never satisfy an interface
+— so a `Cacher` interface would silently cost you the typed API.
 
 ## Stores
 
@@ -160,8 +159,8 @@ and drop queued work.
     go test -race ./...
     GOWORK=off go test ./...
 
-`storetest` is exported so a store outside this repository can prove itself
-against the same contract the built-in drivers are held to:
+`storetest` is exported, so a store of your own can prove itself against the
+same contract the built-in drivers are held to:
 
 ```go
 storetest.Run(t, storetest.Capabilities{...}, newStore)
