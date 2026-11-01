@@ -69,7 +69,7 @@ func (p *Provider) Provide(a app.App) error {
 		// Bridge typed cache events onto the application emitter, so listeners
 		// registered with a.On see them. It is opt-in because dispatch is
 		// synchronous: a listener runs on the goroutine that read the cache.
-		opts = append(opts, WithEventSink(func(e Event) { a.Dispatch(e.EventName(), e) }))
+		opts = append(opts, WithEventSink(func(_ context.Context, e Event) { a.Dispatch(e.EventName(), e) }))
 	}
 
 	c := New(store, opts...)

@@ -26,7 +26,7 @@ func (c *Cache) GetAs[T any](ctx context.Context, key string) (T, bool, error) {
 	if err != nil {
 		if errors.Is(err, ErrMiss) {
 			if c.events.enabled(bitMissed) {
-				c.events.dispatch(CacheMissed{Key: key, Tags: c.tags})
+				c.events.dispatch(ctx, CacheMissed{Key: key, Tags: c.tags})
 			}
 			return zero, false, nil
 		}
@@ -38,7 +38,7 @@ func (c *Cache) GetAs[T any](ctx context.Context, key string) (T, bool, error) {
 		return zero, false, fmt.Errorf("cache: decoding %q with the %s codec: %w", key, c.codec.Name(), err)
 	}
 	if c.events.enabled(bitHit) {
-		c.events.dispatch(CacheHit{Key: key, Tags: c.tags, Value: raw})
+		c.events.dispatch(ctx, CacheHit{Key: key, Tags: c.tags, Value: raw})
 	}
 	return value, true, nil
 }
@@ -64,10 +64,10 @@ func (c *Cache) GetManyAs[T any](ctx context.Context, keys []string) (map[string
 		for _, key := range keys {
 			if encoded, ok := raw[key]; ok {
 				if c.events.enabled(bitHit) {
-					c.events.dispatch(CacheHit{Key: key, Tags: c.tags, Value: encoded})
+					c.events.dispatch(ctx, CacheHit{Key: key, Tags: c.tags, Value: encoded})
 				}
 			} else if c.events.enabled(bitMissed) {
-				c.events.dispatch(CacheMissed{Key: key, Tags: c.tags})
+				c.events.dispatch(ctx, CacheMissed{Key: key, Tags: c.tags})
 			}
 		}
 	}

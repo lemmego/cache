@@ -51,7 +51,7 @@ func WithCodec(c Codec) Option {
 
 // WithEventSink registers a listener for every event, which is how cache events
 // are bridged onto an application's event emitter.
-func WithEventSink(sink func(Event)) Option {
+func WithEventSink(sink Listener) Option {
 	return func(cache *Cache) { cache.events.setSink(sink) }
 }
 
@@ -115,7 +115,7 @@ func (c *Cache) put(ctx context.Context, key string, value any, ttl time.Duratio
 		return err
 	}
 	if c.events.enabled(bitKeyWritten) {
-		c.events.dispatch(KeyWritten{Key: key, Tags: c.tags, Value: encoded, TTL: ttl})
+		c.events.dispatch(ctx, KeyWritten{Key: key, Tags: c.tags, Value: encoded, TTL: ttl})
 	}
 	return nil
 }
@@ -131,7 +131,7 @@ func (c *Cache) Add(ctx context.Context, key string, value any, ttl time.Duratio
 		return added, err
 	}
 	if c.events.enabled(bitKeyWritten) {
-		c.events.dispatch(KeyWritten{Key: key, Tags: c.tags, Value: encoded, TTL: ttl})
+		c.events.dispatch(ctx, KeyWritten{Key: key, Tags: c.tags, Value: encoded, TTL: ttl})
 	}
 	return true, nil
 }
@@ -153,7 +153,7 @@ func (c *Cache) Forget(ctx context.Context, key string) (bool, error) {
 		return false, err
 	}
 	if forgotten && c.events.enabled(bitKeyForgotten) {
-		c.events.dispatch(KeyForgotten{Key: key, Tags: c.tags})
+		c.events.dispatch(ctx, KeyForgotten{Key: key, Tags: c.tags})
 	}
 	return forgotten, nil
 }
@@ -164,7 +164,7 @@ func (c *Cache) Flush(ctx context.Context) error {
 		return err
 	}
 	if c.events.enabled(bitFlushed) {
-		c.events.dispatch(CacheFlushed{Tags: c.tags})
+		c.events.dispatch(ctx, CacheFlushed{Tags: c.tags})
 	}
 	return nil
 }

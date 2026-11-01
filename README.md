@@ -111,8 +111,8 @@ leaking an entry nothing can reach.
 ## Events
 
 ```go
-c.Listen(cache.EventMissed, func(e cache.Event) {
-    slog.Info("cache miss", "key", e.(cache.CacheMissed).Key)
+c.Listen(cache.EventMissed, func(ctx context.Context, e cache.Event) {
+    slog.InfoContext(ctx, "cache miss", "key", e.(cache.CacheMissed).Key)
 })
 ```
 
@@ -121,8 +121,15 @@ one atomic word, and the event value is built inside that check. Listeners run
 synchronously on the goroutine that touched the cache, and a listener that
 panics is contained rather than allowed to fail the request.
 
+A listener is handed **the context of the call that caused the event**, which
+is what makes a cache operation attributable: an observer that reads a request
+id from the context can say which request made the lookup. The context is the
+caller's own, so it may already be cancelled — a listener doing further work
+with it should expect that.
+
 Set `events: true` in configuration to also publish them on the application's
-event emitter.
+event emitter. That bridge drops the context, because `app.Dispatch` takes
+none.
 
 ## Configuration
 

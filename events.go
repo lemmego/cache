@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -62,9 +63,19 @@ func (KeyWritten) EventName() string   { return EventKeyWritten }
 func (KeyForgotten) EventName() string { return EventKeyForgotten }
 func (CacheFlushed) EventName() string { return EventFlushed }
 
-// Listener receives events. It is called on the goroutine that caused the
-// event, so a slow listener slows the cache operation that triggered it.
-type Listener func(Event)
+// Listener receives events.
+//
+// It is called on the goroutine that caused the event, so a slow listener
+// slows the cache operation that triggered it — and it is handed that
+// caller's context, so a listener can read whatever the caller put there.
+// That is what makes a cache event attributable: an observer reading a
+// request id from the context can say which request made the lookup, which a
+// func(Event) could never do.
+//
+// The context is the caller's own, so it may already be cancelled — a
+// listener that does further work with it should expect that rather than
+// assume a live context.
+type Listener func(context.Context, Event)
 
 // Event bits, one per event name, held in a single atomic word so the hot path
 // can ask "is anyone listening for this?" with one load.
@@ -103,7 +114,7 @@ type dispatcher struct {
 
 	mu        sync.RWMutex
 	listeners map[string][]Listener
-	sink      func(Event)
+	sink      Listener
 }
 
 func newDispatcher() *dispatcher {
@@ -129,7 +140,7 @@ func (d *dispatcher) listen(name string, l Listener) {
 
 // setSink registers a listener for every event, used by the bridge onto the
 // application emitter.
-func (d *dispatcher) setSink(sink func(Event)) {
+func (d *dispatcher) setSink(sink Listener) {
 	d.mu.Lock()
 	d.sink = sink
 	d.mu.Unlock()
@@ -142,27 +153,27 @@ func (d *dispatcher) setSink(sink func(Event)) {
 // dispatch delivers an event. Callers must check enabled first — the event
 // value is built at the call site inside that check, so that constructing it
 // costs nothing when nobody is listening.
-func (d *dispatcher) dispatch(e Event) {
+func (d *dispatcher) dispatch(ctx context.Context, e Event) {
 	d.mu.RLock()
 	listeners := d.listeners[e.EventName()]
 	sink := d.sink
 	d.mu.RUnlock()
 
 	for _, l := range listeners {
-		d.deliver(l, e)
+		d.deliver(ctx, l, e)
 	}
 	if sink != nil {
-		d.deliver(sink, e)
+		d.deliver(ctx, sink, e)
 	}
 }
 
 // deliver isolates a listener's panic. A listener that panics must not take
 // down the request that happened to read the cache.
-func (d *dispatcher) deliver(l Listener, e Event) {
+func (d *dispatcher) deliver(ctx context.Context, l Listener, e Event) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("cache: event listener panicked", "event", e.EventName(), "panic", r)
 		}
 	}()
-	l(e)
+	l(ctx, e)
 }
